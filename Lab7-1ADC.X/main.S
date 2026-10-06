@@ -1,8 +1,8 @@
     ; Abel Doyle
     ; RCET3373
-    ; Lab4-1MUZAK
-    ; https://github.com/abeldoyl/Lab-04-Funky-Muzak/tree/main/Lab4-1MUZAK.X
-    
+    ; Lab7-1ADC
+    ; https://github.com/abeldoyl/Lab-07-ADC/tree/main/Lab7-1ADC.X
+
 ; PIC16F883 Configuration Bit Settings
 
 ; Assembly source line config statements
@@ -31,51 +31,69 @@ PSECT resetVect,class=CODE,delta=2
 ResetVector: 
     goto Setup
 
-
 ; Main code section starts at 0008h. User code goes here.
 PSECT code,class=CODE,delta=2
- 
+
 Setup:
     ; add device setup here
     ; Bank 0
-    BCF 0x03,6  ;Set Bank 0
-    BCF 0x03,5  ;Set Bank 0
-    CLRF PORTA  ;Clearing PORTA on reset
-    CLRF PORTB  ;Clearing PORTB on reset
-    
+    BCF 0x03,6      ;Set Bank 0
+    BCF 0x03,5      ;Set Bank 0
+    CLRF PORTA      ;Clearing PORTA on reset
+    CLRF PORTB      ;Clearing PORTB on reset
+    CLRF PORTC      ;Clearing PORTC on reset
+
     ; Bank 1
-    BCF 0x03,6  ;Set Bank 1
-    BSF 0x03,5  ;Set Bank 1
-    CLRF INTCON ;Set INTCON low to remove interrupt flags 
-    CLRF TRISA	;Making PORTA outputs
-    MOVLW 0xFF  ;Set TRISB high
-    MOVWF TRISB ;Set PortB as an Input
-    
+    BCF 0x03,6      ;Set Bank 1
+    BSF 0x03,5      ;Set Bank 1
+    CLRF INTCON     ;Set INTCON low to remove interrupt flags
+    MOVLW 0x61
+    MOVWF OSCCON    ;Internal oscillator at 4 MHz (IRCF = 110)
+    MOVLW 0x01
+    MOVWF TRISA     ;RA0 input (pot), RA1 output (diagnostic), rest outputs
+    CLRF TRISB      ;Making PORTB outputs (ADRESL)
+    CLRF TRISC      ;Making PORTC outputs (ADRESH)
+    MOVLW 0x80
+    MOVWF ADCON1    ;ADFM = 1 (right justified), VCFG = 00 (VDD/VSS references)
+
     ;Bank 3
-    BSF 0x03,6  ;Set Bank 3
-    BSF 0x03,5  ;Set Bank 3
-    CLRF ANSEL  ;Making PORTA digital I/O
-    CLRF ANSELH ;Making PORTB digital I/O
-    
-    BCF 0x03,6        ; Sets Bank 0
-    BCF 0x03,5        ; Sets Bank 0
+    BSF 0x03,6      ;Set Bank 3
+    BSF 0x03,5      ;Set Bank 3
+    MOVLW 0x01
+    MOVWF ANSEL     ;RA0 (AN0) analog, rest of PORTA digital
+    CLRF ANSELH     ;Making PORTB digital I/O
+
+    ; Bank 0
+    BCF 0x03,6      ;Sets Bank 0
+    BCF 0x03,5      ;Sets Bank 0
+    MOVLW 0x41
+    MOVWF ADCON0    ;ADCS = 01 (FOSC/8, TAD = 2 us), CHS = AN0, ADC on
     goto Main
-    
-    
+
 Main:
     ; main code goes here
-    BTFSC PORTB,0      ;1 (2) TCY
-    goto Main	       ;1 TCY
-    
-    MOVLW 0x01	       ;1 TCY
-    XORWF PORTA,1      ;1 TCY
-    
-    MOVLW 0xA4         ;1 TCY delay overhead
-    MOVWF count        ;1 TCY delay overhead
+    NOP             ;Acquisition delay
+    NOP
+    NOP
+    NOP
+    NOP
+    BSF PORTA,1     ;Diagnostic HIGH
+    BSF ADCON0,1    ;Start conversion (GO)
+    BTFSC ADCON0,1  ;Is conversion done?
+    goto $-1        ;If not, check again
+    BCF PORTA,1     ;Diagnostic LOW
 
-DelayLoop:
-    DECFSZ count,1     ;1(2) 1 TCY if not zero, 2 TCY if zero
-    goto DelayLoop     ;2 TCY
-    goto Main	       ;2 TCY code not part of delay
+    MOVF ADRESH,W   ;ADRESH is in Bank 0
+    MOVWF PORTC     ;Store MSBs in PORTC
+
+    ; Bank 1
+    BCF 0x03,6      ;Set Bank 1
+    BSF 0x03,5      ;Set Bank 1
+    MOVF ADRESL,W   ;ADRESL is in Bank 1
+
+    ; Bank 0
+    BCF 0x03,6      ;Set Bank 0
+    BCF 0x03,5      ;Set Bank 0
+    MOVWF PORTB     ;Store LSBs in PORTB
+    goto Main
 End
-    

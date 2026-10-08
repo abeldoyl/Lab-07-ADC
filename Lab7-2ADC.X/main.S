@@ -1,5 +1,5 @@
     ; Abel Doyle
-    ; RCET3373
+    ; RCET3375
     ; Lab7-2ADC
     ; https://github.com/abeldoyl/Lab-07-ADC/tree/main/Lab7-2ADC.X
 

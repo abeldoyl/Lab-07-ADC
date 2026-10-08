@@ -125,7 +125,7 @@ Main:
     CALL AcquireAndMap      ; read ADC, map to compare value, save for next frame
     goto Main
  
-; ISR HANDLER - W, STATUS and PCLATH were already saved in the vector.
+; ISR HANDLER - Saves W, STATUS and PCLATH registers.
 ; Two possible sources, never both at the same time in normal operation:
 ;   TMR1IF -> 20 ms frame boundary: pulse goes HIGH
 ;   CCP1IF -> Timer1 matched the compare value: pulse goes LOW

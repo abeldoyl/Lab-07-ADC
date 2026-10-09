@@ -27,24 +27,23 @@
 #include <xc.inc>
  
 ; ---- Bank 0 variables ----
- busy        EQU 0x20   ; 1 while the servo pulse is HIGH (between Timer1 overflow and CCP match)
- adc_done    EQU 0x21   ; 1 once the NEXT frame's command has been read, mapped and saved
- adc_idx     EQU 0x22   ; 6-bit command index (0..63) = ADRESH >> 2
- ccp_next_l  EQU 0x23   ; low byte of compare value returned by the lookup module
- ccp_next_h  EQU 0x24   ; high byte of compare value returned by the lookup module
-                        ; 0x25 is reserved by the supplied lookup module - do not use
- ccp_save_l  EQU 0x26   ; saved compare value for the next frame (low byte)
- ccp_save_h  EQU 0x27   ; saved compare value for the next frame (high byte)
+ busy        EQU 0x20   ; 1 while the servo pulse is HIGH
+ ccp_next_l  EQU 0x21   ; compare value returned by MapAdcToCcp (low)
+ ccp_next_h  EQU 0x22   ; compare value returned by MapAdcToCcp (high)
+ adc_l       EQU 0x23   ; right-justified 10-bit ADC result (low)  - also module work reg
+ adc_h       EQU 0x24   ; right-justified 10-bit ADC result (high) - also module work reg
+                        ; 0x25 is reserved by the supplied mapping module - do not use
+ ccp_save_l  EQU 0x26
+ ccp_save_h  EQU 0x27
+ adc_done    EQU 0x28   ; moved from 0x21
+
+GLOBAL  ccp_next_l, ccp_next_h, adc_l, adc_h
+EXTRN   MapAdcToCcp
  
 ; ---- common RAM (0x70-0x7F), reachable from any bank without BANKSEL ----
  W_TEMP      EQU 0x70   ; saved W      - ISR context
  STATUS_TEMP EQU 0x71   ; saved STATUS - "
  PCLATH_TEMP EQU 0x72   ; saved PCLATH - "
- 
-; The lookup module reads/writes ccp_next_l/h, so they must be visible to the
-; linker. LookupAdc6ToCcp lives in Lab07-Part3-Lookup.S (separate source file).
-GLOBAL  ccp_next_l, ccp_next_h
-EXTRN   LookupAdc6ToCcp
  
 PSECT resetVect,class=CODE,delta=2
 ResetVector:
@@ -78,8 +77,10 @@ Setup:
     CLRF TRISB
     CLRF TRISC              ; PORTC all outputs; RC2 = servo signal
     BANKSEL ADCON1
-    CLRF ADCON1             ; ADFM = 0 -> LEFT justified (ADRESH = result bits 9:2)
-                            ; VCFG1:VCFG0 = 00 -> references are VDD and VSS
+    MOVLW 0x80
+    MOVWF ADCON1            ; ADFM = 1 -> RIGHT justified
+                            ; ADRESH = bits 9:8, ADRESL = bits 7:0
+                            ; VCFG1:VCFG0 = 00 -> references VDD/VSS
     BANKSEL PIE1
     MOVLW 0x05
     MOVWF PIE1              ; bit2 CCP1IE = 1 (end of pulse), bit0 TMR1IE = 1 (frame start)
@@ -195,25 +196,23 @@ WaitAdc:
     BTFSC ADCON0,1          ; GO/DONE clears itself when the conversion finishes
     goto WaitAdc
  
-    MOVF ADRESH,W           ; left justified: ADRESH holds ADC bits 9:2
-    MOVWF adc_idx
-    BCF STATUS,0            ; clear carry so a 0 is shifted into bit 7
-    RRF adc_idx,F           ; >> 1
-    BCF STATUS,0
-    RRF adc_idx,F           ; >> 2 -> index is ADC bits 9:4 (0..63)
- 
-    MOVF adc_idx,W          ; lookup routine takes the index in W
-    PAGESEL LookupAdc6ToCcp ; lookup module may be on a different program page
-    CALL LookupAdc6ToCcp    ; returns Timer1 compare value in ccp_next_h:ccp_next_l
-    PAGESEL $               ; back to this routine's page
- 
+    MOVF ADRESH,W           ; Bank 0: ADC bits 9:8 (upper bits read 0)
+    MOVWF adc_h
+    BANKSEL ADRESL          ; ADRESL is in Bank 1
+    MOVF ADRESL,W           ; ADC bits 7:0
+    BANKSEL adc_l           ; back to Bank 0
+    MOVWF adc_l
+
+    PAGESEL MapAdcToCcp
+    CALL    MapAdcToCcp     ; adc_h:adc_l -> ccp_next_h:ccp_next_l
+    PAGESEL $
+
     MOVF ccp_next_l,W
-    MOVWF ccp_save_l        ; keep it until the next Timer1 overflow loads it
+    MOVWF ccp_save_l
     MOVF ccp_next_h,W
     MOVWF ccp_save_h
     MOVLW 1
-    MOVWF adc_done          ; one command per frame: don't convert again until
-                            ; T1Overflow clears this flag
+    MOVWF adc_done
     RETURN
 End
  
